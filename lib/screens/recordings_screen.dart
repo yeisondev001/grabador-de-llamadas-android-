@@ -91,6 +91,8 @@ class _RecordingsScreenState extends State<RecordingsScreen> {
         return Icons.chat;
       case 'Llamada':
         return Icons.phone;
+      case 'Diagnóstico':
+        return Icons.science;
       default:
         return Icons.mic;
     }

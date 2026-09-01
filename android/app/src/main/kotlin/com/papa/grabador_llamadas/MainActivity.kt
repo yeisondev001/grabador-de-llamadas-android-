@@ -64,7 +64,8 @@ class MainActivity : FlutterActivity() {
                     "askBeforeRecord" to prefs.getBoolean("askBeforeRecord", true),
                     "autoSpeaker" to prefs.getBoolean("autoSpeaker", true),
                     "audioSourceGsm" to (prefs.getString("audioSourceGsm", "MIC") ?: "MIC"),
-                    "audioSourceWs" to (prefs.getString("audioSourceWs", "MIC") ?: "MIC")
+                    "audioSourceWs" to (prefs.getString("audioSourceWs", "MIC") ?: "MIC"),
+                    "modoDiagnostico" to prefs.getBoolean("modoDiagnostico", false)
                 )
             )
             "setSetting" -> {

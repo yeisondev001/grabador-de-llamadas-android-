@@ -82,6 +82,7 @@ class CallRecorderService : Service() {
     private var session: RecordingSession? = null
     private var silenceMs = 0L
     private var recordStartElapsed = 0L
+    private var diag: MutableList<RecordingSession> = mutableListOf()
 
     @Volatile var isRecording = false
         private set
@@ -422,6 +423,41 @@ class CallRecorderService : Service() {
         val dir = File(getExternalMediaDirs().firstOrNull() ?: filesDir, "Grabaciones")
         if (!dir.exists()) dir.mkdirs()
         val stamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date())
+        if (prefs.getBoolean("modoDiagnostico", false) && type != TYPE_TEST) {
+            val sources = listOf(
+                MediaRecorder.AudioSource.MIC,
+                MediaRecorder.AudioSource.VOICE_CALL,
+                MediaRecorder.AudioSource.VOICE_COMMUNICATION,
+                MediaRecorder.AudioSource.CAMCORDER,
+                MediaRecorder.AudioSource.VOICE_RECOGNITION,
+                MediaRecorder.AudioSource.UNPROCESSED
+            )
+            executor.execute {
+                val ok = mutableListOf<RecordingSession>()
+                sources.forEach { src ->
+                    val f = File(dir, "DIAG_${sourceName(src)}_$stamp.m4a")
+                    try {
+                        val s = RecordingSession(src, f)
+                        s.start()
+                        ok.add(s)
+                    } catch (_: Exception) {
+                        f.delete()
+                    }
+                }
+                if (ok.isEmpty()) return@execute
+                diag = ok
+                isRecording = true
+                currentType = type
+                currentSource = "DIAG x${ok.size}"
+                currentFile = dir.absolutePath
+                recordStartElapsed = SystemClock.elapsedRealtime()
+                if (type != TYPE_TEST && prefs.getBoolean("autoSpeaker", true)) forceSpeaker()
+                acquireWake()
+                Log.d("Grabador", "INICIO diag tipo=$type fuentes=${ok.size}")
+                updateNotification()
+            }
+            return
+        }
         val file = File(dir, "${type}_$stamp.m4a")
         val source = audioSourceFor(type)
         executor.execute { begin(type, file, source) }
@@ -485,6 +521,25 @@ class CallRecorderService : Service() {
     }
 
     fun stopRecording() {
+        if (diag.isNotEmpty()) {
+            val list = diag
+            val t = currentType
+            diag = mutableListOf()
+            handler.removeCallbacks(watchdog)
+            isRecording = false
+            currentType = null
+            currentSource = null
+            currentFile = null
+            releaseWake()
+            lastPeak = list.maxOfOrNull { it.peakAmplitude } ?: 0
+            Log.d("Grabador", "FIN diag pico=$lastPeak archivos=${list.size}")
+            executor.execute { list.forEach { it.stop() } }
+            if (prefs.getBoolean("autoSpeaker", true) && (t == TYPE_GSM || t == TYPE_WS || t == TYPE_MANUAL)) {
+                try { audioManager.isSpeakerphoneOn = false } catch (_: Exception) {}
+            }
+            updateNotification()
+            return
+        }
         val s = session ?: return
         val type = currentType
         val file = currentFile
@@ -509,9 +564,9 @@ class CallRecorderService : Service() {
         "type" to (currentType ?: ""),
         "source" to (currentSource ?: ""),
         "file" to (currentFile ?: ""),
-        "durationMs" to (session?.durationMs ?: 0L),
-        "amp" to (session?.lastAmplitude ?: 0),
-        "peak" to (session?.peakAmplitude ?: 0),
+        "durationMs" to (diag.firstOrNull()?.durationMs ?: session?.durationMs ?: 0L),
+        "amp" to (diag.maxOfOrNull { it.lastAmplitude } ?: session?.lastAmplitude ?: 0),
+        "peak" to (diag.maxOfOrNull { it.peakAmplitude } ?: session?.peakAmplitude ?: 0),
         "lastPeak" to lastPeak,
         "speaker" to try { audioManager.isSpeakerphoneOn } catch (_: Exception) { false }
     )

@@ -90,6 +90,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
           ),
           _sourceDropdown('Fuente para llamadas normales', 'audioSourceGsm'),
           _sourceDropdown('Fuente para WhatsApp', 'audioSourceWs'),
+          SwitchListTile(
+            title: const Text('Modo diagnóstico'),
+            subtitle: const Text(
+                'Graba un archivo por cada fuente de audio en cada llamada. Haz UNA llamada de prueba, revisa cuál archivo suena y ponla como fuente'),
+            value: _settings['modoDiagnostico'] == true,
+            onChanged: (v) => _set('modoDiagnostico', v),
+          ),
           const Divider(),
           const Padding(
             padding: EdgeInsets.all(16),

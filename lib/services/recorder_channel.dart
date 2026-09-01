@@ -14,6 +14,7 @@ class RecordingInfo {
   });
 
   String get type {
+    if (name.startsWith('DIAG')) return 'Diagnóstico';
     if (name.startsWith('WHATSAPP')) return 'WhatsApp';
     if (name.startsWith('LLAMADA')) return 'Llamada';
     return 'Prueba';
