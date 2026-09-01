@@ -23,6 +23,7 @@ import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
 import android.os.PowerManager
+import android.os.SystemClock
 import android.telephony.PhoneStateListener
 import android.telephony.TelephonyCallback
 import android.telephony.TelephonyManager
@@ -77,6 +78,7 @@ class CallRecorderService : Service() {
     private var wakeLock: PowerManager.WakeLock? = null
     private var session: RecordingSession? = null
     private var silenceMs = 0L
+    private var recordStartElapsed = 0L
 
     @Volatile var isRecording = false
         private set
@@ -264,15 +266,11 @@ class CallRecorderService : Service() {
         cancelPrompt(TYPE_WS)
         if (isRecording && currentType == TYPE_WS) {
             stopRecording()
-            if (prefs.getBoolean("autoSpeaker", true)) {
-                try { audioManager.isSpeakerphoneOn = false } catch (_: Exception) {}
-            }
         }
     }
 
     private fun doStartWs() {
         if (isRecording) return
-        if (prefs.getBoolean("autoSpeaker", true)) forceSpeaker()
         startRecording(TYPE_WS)
     }
 
@@ -352,7 +350,7 @@ class CallRecorderService : Service() {
         if (!dir.exists()) dir.mkdirs()
         val stamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date())
         val file = File(dir, "${type}_$stamp.m4a")
-        val forceMic = prefs.getBoolean("forceMic", false)
+        val forceMic = prefs.getBoolean("forceMic", true)
         val firstSource = if (forceMic) MediaRecorder.AudioSource.MIC else MediaRecorder.AudioSource.VOICE_CALL
         executor.execute { begin(type, file, firstSource) }
     }
@@ -371,6 +369,10 @@ class CallRecorderService : Service() {
         currentSource = if (source == MediaRecorder.AudioSource.VOICE_CALL) "VOICE_CALL" else "MIC"
         currentFile = file.absolutePath
         silenceMs = 0
+        recordStartElapsed = SystemClock.elapsedRealtime()
+        if (type == TYPE_GSM || type == TYPE_WS) {
+            if (prefs.getBoolean("autoSpeaker", true)) forceSpeaker()
+        }
         handler.postDelayed(watchdog, 800)
         acquireWake()
         updateNotification("Grabando $type (${currentSource})")
@@ -380,8 +382,11 @@ class CallRecorderService : Service() {
         override fun run() {
             val s = session ?: return
             if (s.source == MediaRecorder.AudioSource.VOICE_CALL) {
+                val elapsed = SystemClock.elapsedRealtime() - recordStartElapsed
                 if (s.lastAmplitude <= 4) silenceMs += 500 else silenceMs = 0
-                if (silenceMs >= 2500) {
+                val strictSilence = silenceMs >= 2000
+                val nearSilence = elapsed >= 6000 && s.peakAmplitude <= 30
+                if (strictSilence || nearSilence) {
                     restartWithMic()
                     return
                 }
@@ -415,6 +420,9 @@ class CallRecorderService : Service() {
         currentSource = null
         releaseWake()
         executor.execute { s.stop() }
+        if (prefs.getBoolean("autoSpeaker", true) && (type == TYPE_GSM || type == TYPE_WS)) {
+            try { audioManager.isSpeakerphoneOn = false } catch (_: Exception) {}
+        }
         updateNotification("Vigilando llamadas entrantes")
     }
 
@@ -448,6 +456,8 @@ class RecordingSession(val source: Int, private val outFile: File) {
     private lateinit var thread: Thread
 
     @Volatile var lastAmplitude = 0
+        private set
+    @Volatile var peakAmplitude = 0
         private set
     @Volatile var durationMs = 0L
         private set
@@ -491,6 +501,7 @@ class RecordingSession(val source: Int, private val outFile: File) {
                     if (v > max) max = v
                 }
                 lastAmplitude = max
+                if (max > peakAmplitude) peakAmplitude = max
                 durationMs = totalSamples * 1000 / sampleRate
                 val inIdx = codec.dequeueInputBuffer(20000)
                 if (inIdx >= 0) {

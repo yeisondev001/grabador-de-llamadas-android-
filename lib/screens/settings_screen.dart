@@ -64,7 +64,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
           SwitchListTile(
             title: const Text('Forzar micrófono'),
             subtitle: const Text(
-                'No intenta el canal interno del teléfono; graba directo por micrófono'),
+                'Graba directo por micrófono desde el primer segundo (recomendado). El altavoz se enciende solo'),
             value: _settings['forceMic'] == true,
             onChanged: (v) => _set('forceMic', v),
           ),
