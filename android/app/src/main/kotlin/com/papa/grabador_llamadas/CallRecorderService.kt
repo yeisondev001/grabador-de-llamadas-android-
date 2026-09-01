@@ -46,6 +46,7 @@ class CallRecorderService : Service() {
         const val ACTION_RECORD_START = "com.papa.grabador_llamadas.RECORD_START"
         const val ACTION_RECORD_STOP = "com.papa.grabador_llamadas.RECORD_STOP"
         const val EXTRA_TYPE = "type"
+        const val EXTRA_PENDING = "pending"
         const val TYPE_GSM = "LLAMADA"
         const val TYPE_WS = "WHATSAPP"
         const val TYPE_TEST = "PRUEBA"
@@ -116,7 +117,14 @@ class CallRecorderService : Service() {
                 stopSelf()
                 return START_NOT_STICKY
             }
-            ACTION_RECORD_START -> startRecording(intent.getStringExtra(EXTRA_TYPE) ?: TYPE_GSM)
+            ACTION_RECORD_START -> {
+                val t = intent.getStringExtra(EXTRA_TYPE) ?: TYPE_GSM
+                if (intent.getBooleanExtra(EXTRA_PENDING, false)) {
+                    if (t == TYPE_WS) pendingWs = true else pendingGsm = true
+                } else {
+                    startRecording(t)
+                }
+            }
             ACTION_RECORD_STOP -> stopRecording()
             ACTION_ACCEPT -> handleAccept(intent)
             ACTION_DECLINE -> handleDecline(intent)
@@ -168,7 +176,7 @@ class CallRecorderService : Service() {
                 0, "Grabar ahora",
                 PendingIntent.getService(
                     this, 20,
-                    Intent(this, CallRecorderService::class.java).setAction(ACTION_RECORD_START).putExtra(EXTRA_TYPE, TYPE_MANUAL),
+                    Intent(this, CallRecorderService::class.java).setAction(ACTION_ACCEPT).putExtra(EXTRA_TYPE, TYPE_MANUAL),
                     PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
                 )
             )
@@ -301,13 +309,25 @@ class CallRecorderService : Service() {
 
     private fun handleAccept(intent: Intent?) {
         val type = intent?.getStringExtra(EXTRA_TYPE) ?: TYPE_GSM
-        if (type == TYPE_GSM) {
-            if (callState == TelephonyManager.CALL_STATE_OFFHOOK) startRecording(TYPE_GSM) else pendingGsm = true
-        } else {
-            if (wsOngoing) doStartWs() else pendingWs = true
-            wsHandledAt = System.currentTimeMillis()
+        if (type == TYPE_GSM || type == TYPE_WS) {
+            cancelPrompt(type)
+            if (type == TYPE_WS) wsHandledAt = System.currentTimeMillis()
         }
-        cancelPrompt(type)
+        if (isRecording) return
+        val pending = when (type) {
+            TYPE_GSM -> callState != TelephonyManager.CALL_STATE_OFFHOOK
+            TYPE_WS -> !wsOngoing
+            else -> false
+        }
+        val i = Intent(applicationContext, CallRecorderService::class.java)
+            .setAction(ACTION_RECORD_START)
+            .putExtra(EXTRA_TYPE, type)
+            .putExtra(EXTRA_PENDING, pending)
+        Log.d("Grabador", "Aceptado tipo=$type pendiente=$pending reiniciando servicio para autorizar microfono")
+        handler.postDelayed({
+            try { ContextCompat.startForegroundService(applicationContext, i) } catch (_: Exception) {}
+        }, 400)
+        stopSelf()
     }
 
     private fun handleDecline(intent: Intent?) {
