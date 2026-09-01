@@ -19,6 +19,14 @@ class MainActivity : FlutterActivity() {
 
     private val prefs by lazy { getSharedPreferences("settings", MODE_PRIVATE) }
 
+    override fun onResume() {
+        super.onResume()
+        if (prefs.getBoolean("monitorEnabled", true) && CallRecorderService.instance?.isRecording != true) {
+            CallRecorderService.stop(this)
+            CallRecorderService.start(this)
+        }
+    }
+
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "grabador/native")

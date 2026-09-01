@@ -27,6 +27,7 @@ import android.os.SystemClock
 import android.telephony.PhoneStateListener
 import android.telephony.TelephonyCallback
 import android.telephony.TelephonyManager
+import android.util.Log
 import androidx.core.content.ContextCompat
 import java.io.File
 import java.text.SimpleDateFormat
@@ -48,6 +49,7 @@ class CallRecorderService : Service() {
         const val TYPE_GSM = "LLAMADA"
         const val TYPE_WS = "WHATSAPP"
         const val TYPE_TEST = "PRUEBA"
+        const val TYPE_MANUAL = "MANUAL"
         const val ACTION_ACCEPT = "com.papa.grabador_llamadas.ACCEPT_RECORD"
         const val ACTION_DECLINE = "com.papa.grabador_llamadas.DECLINE_RECORD"
         const val CHANNEL_PROMPT = "grabador_prompt"
@@ -138,30 +140,52 @@ class CallRecorderService : Service() {
         getSystemService(NotificationManager::class.java).createNotificationChannel(ch2)
     }
 
-    private fun buildNotification(text: String): Notification {
+    private fun buildNotification(): Notification {
         val pi = PendingIntent.getActivity(
             this, 0, Intent(this, MainActivity::class.java),
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
         )
-        return Notification.Builder(this, CHANNEL_ID)
-            .setContentTitle("Grabador de Llamadas")
-            .setContentText(text)
+        val b = Notification.Builder(this, CHANNEL_ID)
             .setSmallIcon(android.R.drawable.ic_btn_speak_now)
             .setOngoing(true)
             .setContentIntent(pi)
-            .build()
+        if (isRecording) {
+            val secs = (session?.durationMs ?: 0L) / 1000
+            b.setContentTitle("Grabando ${currentType ?: ""}")
+            b.setContentText("Fuente: $currentSource · ${secs}s")
+            b.addAction(
+                0, "Detener",
+                PendingIntent.getService(
+                    this, 21,
+                    Intent(this, CallRecorderService::class.java).setAction(ACTION_RECORD_STOP),
+                    PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+                )
+            )
+        } else {
+            b.setContentTitle("Grabador de Llamadas")
+            b.setContentText("Vigilando llamadas entrantes")
+            b.addAction(
+                0, "Grabar ahora",
+                PendingIntent.getService(
+                    this, 20,
+                    Intent(this, CallRecorderService::class.java).setAction(ACTION_RECORD_START).putExtra(EXTRA_TYPE, TYPE_MANUAL),
+                    PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+                )
+            )
+        }
+        return b.build()
     }
 
     private fun startAsForeground() {
         if (Build.VERSION.SDK_INT >= 30) {
-            startForeground(NOTIF_ID, buildNotification("Vigilando llamadas entrantes"), ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE)
+            startForeground(NOTIF_ID, buildNotification(), ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE)
         } else {
-            startForeground(NOTIF_ID, buildNotification("Vigilando llamadas entrantes"))
+            startForeground(NOTIF_ID, buildNotification())
         }
     }
 
-    private fun updateNotification(text: String) {
-        getSystemService(NotificationManager::class.java).notify(NOTIF_ID, buildNotification(text))
+    private fun updateNotification() {
+        getSystemService(NotificationManager::class.java).notify(NOTIF_ID, buildNotification())
     }
 
     private fun registerPhoneListener() {
@@ -231,7 +255,7 @@ class CallRecorderService : Service() {
     fun onGsmIdle() {
         cancelPrompt(TYPE_GSM)
         pendingGsm = false
-        if (isRecording && currentType == TYPE_GSM) stopRecording()
+        if (isRecording && (currentType == TYPE_GSM || currentType == TYPE_MANUAL)) stopRecording()
     }
 
     fun onGsmCall(active: Boolean) {
@@ -265,7 +289,7 @@ class CallRecorderService : Service() {
         wsOngoing = false
         pendingWs = false
         cancelPrompt(TYPE_WS)
-        if (isRecording && currentType == TYPE_WS) {
+        if (isRecording && (currentType == TYPE_WS || currentType == TYPE_MANUAL)) {
             stopRecording()
         }
     }
@@ -398,12 +422,13 @@ class CallRecorderService : Service() {
         currentFile = file.absolutePath
         silenceMs = 0
         recordStartElapsed = SystemClock.elapsedRealtime()
-        if (type == TYPE_GSM || type == TYPE_WS) {
+        if (type != TYPE_TEST) {
             if (prefs.getBoolean("autoSpeaker", true)) forceSpeaker()
         }
+        Log.d("Grabador", "INICIO grabacion tipo=$type fuente=$currentSource archivo=${file.name}")
         handler.postDelayed(watchdog, 800)
         acquireWake()
-        updateNotification("Grabando $type (${currentSource})")
+        updateNotification()
     }
 
     private val watchdog = object : Runnable {
@@ -415,10 +440,12 @@ class CallRecorderService : Service() {
                 val strictSilence = silenceMs >= 2000
                 val nearSilence = elapsed >= 6000 && s.peakAmplitude <= 30
                 if (strictSilence || nearSilence) {
+                    Log.d("Grabador", "Canal VOICE_CALL mudo, cambio automatico a MIC")
                     restartWithMic()
                     return
                 }
             }
+            Log.d("Grabador", "senal ultima=${s.lastAmplitude} pico=${s.peakAmplitude} ms=${s.durationMs}")
             handler.postDelayed(this, 500)
         }
     }
@@ -448,11 +475,12 @@ class CallRecorderService : Service() {
         currentSource = null
         releaseWake()
         lastPeak = s.peakAmplitude
+        Log.d("Grabador", "FIN grabacion pico=$lastPeak ms=${s.durationMs}")
         executor.execute { s.stop() }
-        if (prefs.getBoolean("autoSpeaker", true) && (type == TYPE_GSM || type == TYPE_WS)) {
+        if (prefs.getBoolean("autoSpeaker", true) && (type == TYPE_GSM || type == TYPE_WS || type == TYPE_MANUAL)) {
             try { audioManager.isSpeakerphoneOn = false } catch (_: Exception) {}
         }
-        updateNotification("Vigilando llamadas entrantes")
+        updateNotification()
     }
 
     fun statusMap(): Map<String, Any?> = mapOf(

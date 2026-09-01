@@ -98,7 +98,7 @@ class _HomeScreenState extends State<HomeScreen> {
             : Colors.orange;
     final icon = recording ? Icons.fiber_manual_record : Icons.phone_in_talk;
     final title = recording
-        ? 'GRABANDO ${st!.type == 'WHATSAPP' ? 'WHATSAPP' : st.type == 'LLAMADA' ? 'LLAMADA' : 'PRUEBA'}'
+        ? 'GRABANDO ${st!.type == 'WHATSAPP' ? 'WHATSAPP' : st.type == 'LLAMADA' ? 'LLAMADA' : st.type == 'MANUAL' ? 'MANUAL' : 'PRUEBA'}'
         : running && ready
             ? 'Vigilando llamadas'
             : 'Incompleto';
