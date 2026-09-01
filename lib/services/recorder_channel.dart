@@ -41,6 +41,10 @@ class RecorderStatus {
   final String type;
   final String source;
   final int durationMs;
+  final int amp;
+  final int peak;
+  final int lastPeak;
+  final bool speaker;
   final bool mic;
   final bool phone;
   final bool notifPerm;
@@ -54,6 +58,10 @@ class RecorderStatus {
     required this.type,
     required this.source,
     required this.durationMs,
+    required this.amp,
+    required this.peak,
+    required this.lastPeak,
+    required this.speaker,
     required this.mic,
     required this.phone,
     required this.notifPerm,
@@ -79,6 +87,10 @@ class RecorderStatus {
       type: m['type'] ?? '',
       source: m['source'] ?? '',
       durationMs: (m['durationMs'] as num?)?.toInt() ?? 0,
+      amp: (m['amp'] as num?)?.toInt() ?? 0,
+      peak: (m['peak'] as num?)?.toInt() ?? 0,
+      lastPeak: (m['lastPeak'] as num?)?.toInt() ?? 0,
+      speaker: m['speaker'] == true,
       mic: m['mic'] == true,
       phone: m['phone'] == true,
       notifPerm: m['notifPerm'] == true,

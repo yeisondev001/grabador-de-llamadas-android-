@@ -96,6 +96,7 @@ class CallRecorderService : Service() {
     @Volatile private var promptShownGsm = false
     @Volatile private var promptShownWs = false
     @Volatile private var wsHandledAt = 0L
+    private var lastPeak = 0
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -306,15 +307,20 @@ class CallRecorderService : Service() {
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
         )
         val label = if (type == TYPE_GSM) "Llamada entrante" else "Llamada de WhatsApp"
+        val openPi = PendingIntent.getActivity(
+            this, 10, Intent(this, MainActivity::class.java),
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+        )
         val n = Notification.Builder(this, CHANNEL_PROMPT)
             .setContentTitle(label)
             .setContentText("¿Grabar esta llamada?")
             .setSmallIcon(android.R.drawable.ic_btn_speak_now)
             .setPriority(Notification.PRIORITY_MAX)
             .setCategory(Notification.CATEGORY_CALL)
+            .setContentIntent(openPi)
             .addAction(0, "Grabar", acceptPi)
             .addAction(0, "No", declinePi)
-            .setAutoCancel(true)
+            .setOngoing(true)
             .build()
         val id = if (type == TYPE_GSM) NOTIF_PROMPT_GSM else NOTIF_PROMPT_WS
         getSystemService(NotificationManager::class.java).notify(id, n)
@@ -343,6 +349,29 @@ class CallRecorderService : Service() {
         }
     }
 
+    private fun audioSourceFor(type: String): Int {
+        val prefKey = if (type == TYPE_WS) "audioSourceWs" else "audioSourceGsm"
+        return when (prefs.getString(prefKey, "MIC")) {
+            "VOICE_CALL" -> MediaRecorder.AudioSource.VOICE_CALL
+            "VOICE_COMMUNICATION" -> MediaRecorder.AudioSource.VOICE_COMMUNICATION
+            "CAMCORDER" -> MediaRecorder.AudioSource.CAMCORDER
+            "DEFAULT" -> MediaRecorder.AudioSource.DEFAULT
+            "VOICE_RECOGNITION" -> MediaRecorder.AudioSource.VOICE_RECOGNITION
+            "UNPROCESSED" -> MediaRecorder.AudioSource.UNPROCESSED
+            else -> MediaRecorder.AudioSource.MIC
+        }
+    }
+
+    private fun sourceName(source: Int): String = when (source) {
+        MediaRecorder.AudioSource.VOICE_CALL -> "VOICE_CALL"
+        MediaRecorder.AudioSource.VOICE_COMMUNICATION -> "VOICE_COMMUNICATION"
+        MediaRecorder.AudioSource.CAMCORDER -> "CAMCORDER"
+        MediaRecorder.AudioSource.DEFAULT -> "DEFAULT"
+        MediaRecorder.AudioSource.VOICE_RECOGNITION -> "VOICE_RECOGNITION"
+        MediaRecorder.AudioSource.UNPROCESSED -> "UNPROCESSED"
+        else -> "MIC"
+    }
+
     private fun startRecording(type: String) {
         if (isRecording) return
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) return
@@ -350,9 +379,8 @@ class CallRecorderService : Service() {
         if (!dir.exists()) dir.mkdirs()
         val stamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date())
         val file = File(dir, "${type}_$stamp.m4a")
-        val forceMic = prefs.getBoolean("forceMic", true)
-        val firstSource = if (forceMic) MediaRecorder.AudioSource.MIC else MediaRecorder.AudioSource.VOICE_CALL
-        executor.execute { begin(type, file, firstSource) }
+        val source = audioSourceFor(type)
+        executor.execute { begin(type, file, source) }
     }
 
     private fun begin(type: String, file: File, source: Int) {
@@ -366,7 +394,7 @@ class CallRecorderService : Service() {
         session = s
         isRecording = true
         currentType = type
-        currentSource = if (source == MediaRecorder.AudioSource.VOICE_CALL) "VOICE_CALL" else "MIC"
+        currentSource = sourceName(source)
         currentFile = file.absolutePath
         silenceMs = 0
         recordStartElapsed = SystemClock.elapsedRealtime()
@@ -419,6 +447,7 @@ class CallRecorderService : Service() {
         currentType = null
         currentSource = null
         releaseWake()
+        lastPeak = s.peakAmplitude
         executor.execute { s.stop() }
         if (prefs.getBoolean("autoSpeaker", true) && (type == TYPE_GSM || type == TYPE_WS)) {
             try { audioManager.isSpeakerphoneOn = false } catch (_: Exception) {}
@@ -432,7 +461,11 @@ class CallRecorderService : Service() {
         "type" to (currentType ?: ""),
         "source" to (currentSource ?: ""),
         "file" to (currentFile ?: ""),
-        "durationMs" to (session?.durationMs ?: 0L)
+        "durationMs" to (session?.durationMs ?: 0L),
+        "amp" to (session?.lastAmplitude ?: 0),
+        "peak" to (session?.peakAmplitude ?: 0),
+        "lastPeak" to lastPeak,
+        "speaker" to try { audioManager.isSpeakerphoneOn } catch (_: Exception) { false }
     )
 
     private fun acquireWake() {

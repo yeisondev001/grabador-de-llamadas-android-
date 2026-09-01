@@ -55,7 +55,8 @@ class MainActivity : FlutterActivity() {
                     "recordWs" to prefs.getBoolean("recordWs", true),
                     "askBeforeRecord" to prefs.getBoolean("askBeforeRecord", true),
                     "autoSpeaker" to prefs.getBoolean("autoSpeaker", true),
-                    "forceMic" to prefs.getBoolean("forceMic", false)
+                    "audioSourceGsm" to (prefs.getString("audioSourceGsm", "MIC") ?: "MIC"),
+                    "audioSourceWs" to (prefs.getString("audioSourceWs", "MIC") ?: "MIC")
                 )
             )
             "setSetting" -> {
@@ -139,7 +140,11 @@ class MainActivity : FlutterActivity() {
             "type" to "",
             "source" to "",
             "file" to "",
-            "durationMs" to 0L
+            "durationMs" to 0L,
+            "amp" to 0,
+            "peak" to 0,
+            "lastPeak" to 0,
+            "speaker" to false
         )
         val out = base.toMutableMap()
         out["mic"] = ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED

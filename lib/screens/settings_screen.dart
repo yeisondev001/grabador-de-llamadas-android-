@@ -23,9 +23,36 @@ class _SettingsScreenState extends State<SettingsScreen> {
     if (mounted) setState(() => _settings = s);
   }
 
-  Future<void> _set(String key, bool value) async {
+  Future<void> _set(String key, Object value) async {
     setState(() => _settings[key] = value);
     await RecorderChannel.setSetting(key, value);
+  }
+
+  static const _sources = {
+    'MIC': 'Micrófono (predeterminado)',
+    'VOICE_COMMUNICATION': 'Canal de llamadas de Internet (probar con WhatsApp)',
+    'VOICE_CALL': 'Canal interno del teléfono (probar con llamadas normales)',
+    'CAMCORDER': 'Cámara (alternativa)',
+    'DEFAULT': 'Predeterminado del sistema (alternativa)',
+    'VOICE_RECOGNITION': 'Reconocimiento de voz (alternativa)',
+    'UNPROCESSED': 'Audio sin procesar (alternativa)',
+  };
+
+  Widget _sourceDropdown(String title, String prefKey) {
+    final current = (_settings[prefKey] as String?) ?? 'MIC';
+    return ListTile(
+      title: Text(title),
+      subtitle: Text(_sources[current] ?? current),
+      trailing: DropdownButton<String>(
+        value: current,
+        items: _sources.keys
+            .map((s) => DropdownMenuItem(value: s, child: Text(s, style: const TextStyle(fontSize: 13))))
+            .toList(),
+        onChanged: (v) {
+          if (v != null) _set(prefKey, v);
+        },
+      ),
+    );
   }
 
   @override
@@ -61,13 +88,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
             value: _settings['autoSpeaker'] == true,
             onChanged: (v) => _set('autoSpeaker', v),
           ),
-          SwitchListTile(
-            title: const Text('Forzar micrófono'),
-            subtitle: const Text(
-                'Graba directo por micrófono desde el primer segundo (recomendado). El altavoz se enciende solo'),
-            value: _settings['forceMic'] == true,
-            onChanged: (v) => _set('forceMic', v),
-          ),
+          _sourceDropdown('Fuente para llamadas normales', 'audioSourceGsm'),
+          _sourceDropdown('Fuente para WhatsApp', 'audioSourceWs'),
           const Divider(),
           const Padding(
             padding: EdgeInsets.all(16),
@@ -78,11 +100,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     style: TextStyle(fontWeight: FontWeight.bold)),
                 SizedBox(height: 8),
                 Text(
-                  '· Llamada normal: la app intenta grabar por el canal de voz '
-                  '(ambas vías nativas). Si el teléfono lo bloquea, cambia a '
-                  'micrófono automáticamente y necesitarás el altavoz.\n\n'
-                  '· WhatsApp: se graba por micrófono siempre; el altavoz debe '
-                  'estar encendido para oír a la otra persona.\n\n'
+                  '· Si las grabaciones salen mudas, prueba otra fuente de audio '
+                  'para cada tipo de llamada (arriba). Durante una llamada, mira '
+                  'en la pantalla principal el número de "Señal": 0 = silencio, '
+                  'más de 100 = hay audio.\n\n'
                   '· Las grabaciones se guardan en '
                   'Android/media/com.papa.grabador_llamadas/Grabaciones.',
                 ),

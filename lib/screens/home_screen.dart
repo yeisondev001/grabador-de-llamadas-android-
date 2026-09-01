@@ -103,10 +103,14 @@ class _HomeScreenState extends State<HomeScreen> {
             ? 'Vigilando llamadas'
             : 'Incompleto';
     final subtitle = recording
-        ? 'Fuente: ${st!.source}  ·  ${st.durationLabel}'
+        ? 'Fuente: ${st!.source}  ·  ${st.durationLabel}  ·  Señal: ${st.amp} (pico ${st.peak})\n'
+            'Altavoz: ${st.speaker ? "SÍ" : "NO"}  ·  Habla fuerte para probar'
         : running
             ? (ready
-                ? 'Esperando llamada (GSM y WhatsApp)'
+                ? (st!.lastPeak > 0
+                    ? 'Última grabación: pico de señal ${st.lastPeak}'
+                        '${st.lastPeak < 100 ? "  ⚠ SIN AUDIO" : "  ✓ con audio"}'
+                    : 'Esperando llamada (GSM y WhatsApp)')
                 : 'Faltan permisos para grabar')
             : 'Activa el grabador abajo';
 
